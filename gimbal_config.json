@@ -1,0 +1,25 @@
+{
+  "port": "COM6",
+  "gimbal1": {
+    "servo1_pin": "33",
+    "servo2_pin": "45",
+    "light_pin": "9",
+    "center1": 90,
+    "center2": 90,
+    "min1": 0,
+    "max1": 180,
+    "min2": 0,
+    "max2": 180
+  },
+  "gimbal2": {
+    "servo1_pin": "35",
+    "servo2_pin": "47",
+    "light_pin": "10",
+    "center1": 90,
+    "center2": 90,
+    "min1": 0,
+    "max1": 180,
+    "min2": 0,
+    "max2": 180
+  }
+}
