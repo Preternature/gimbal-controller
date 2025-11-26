@@ -42,6 +42,9 @@ class GimbalUnit:
         self.min2_default = config.get('min2', 0)
         self.max2_default = config.get('max2', 180)
 
+        self.pin_change_pending = None
+        self.light_pin_change_pending = None
+
         self.create_widgets(parent_frame)
 
     def create_widgets(self, parent):
@@ -51,18 +54,18 @@ class GimbalUnit:
 
         ttk.Label(pin_frame, text="Servo 1 (Top):").grid(row=0, column=0, sticky="w")
         self.servo1_pin_var = tk.StringVar(value=self.servo1_pin_default)
+        self.servo1_pin_var.trace_add("write", lambda *args: self.on_pin_change())
         ttk.Entry(pin_frame, textvariable=self.servo1_pin_var, width=5).grid(row=0, column=1, padx=5)
 
         ttk.Label(pin_frame, text="Servo 2 (Bottom):").grid(row=0, column=2, sticky="w", padx=(10, 0))
         self.servo2_pin_var = tk.StringVar(value=self.servo2_pin_default)
+        self.servo2_pin_var.trace_add("write", lambda *args: self.on_pin_change())
         ttk.Entry(pin_frame, textvariable=self.servo2_pin_var, width=5).grid(row=0, column=3, padx=5)
-
-        ttk.Button(pin_frame, text="Set Servos", command=self.set_servo_pins).grid(row=0, column=4, padx=5)
 
         ttk.Label(pin_frame, text="Light Pin:").grid(row=1, column=0, sticky="w", pady=(5, 0))
         self.light_pin_var = tk.StringVar(value=self.light_pin_default)
+        self.light_pin_var.trace_add("write", lambda *args: self.on_light_pin_change())
         ttk.Entry(pin_frame, textvariable=self.light_pin_var, width=5).grid(row=1, column=1, padx=5, pady=(5, 0))
-        ttk.Button(pin_frame, text="Set Light", command=self.set_light_pin).grid(row=1, column=2, padx=5, pady=(5, 0))
 
         # Calibration Frame
         cal_frame = ttk.LabelFrame(parent, text="Servo Calibration & Range of Motion", padding=10)
@@ -164,7 +167,7 @@ class GimbalUnit:
 
         for preset in ["GENTLE", "NORMAL", "WILD", "DYING", "CIRCULAR"]:
             ttk.Button(preset_frame, text=preset, width=8,
-                      command=lambda p=preset: self.send_command(f"PRESET:{p}")).pack(side="left", padx=2)
+                      command=lambda p=preset: self.send_command(f"G{self.gimbal_id}:PRESET:{p}")).pack(side="left", padx=2)
 
         # Light Control Frame
         light_frame = ttk.LabelFrame(parent, text="Light LFO Control", padding=10)
@@ -205,24 +208,24 @@ class GimbalUnit:
         btn_frame = ttk.Frame(control_frame)
         btn_frame.pack()
 
-        ttk.Button(btn_frame, text="START SWING", command=lambda: self.send_command("START"),
+        ttk.Button(btn_frame, text="START SWING", command=lambda: self.send_command(f"G{self.gimbal_id}:START"),
                    width=15).grid(row=0, column=0, padx=5, pady=2)
-        ttk.Button(btn_frame, text="STOP SWING", command=lambda: self.send_command("STOP"),
+        ttk.Button(btn_frame, text="STOP SWING", command=lambda: self.send_command(f"G{self.gimbal_id}:STOP"),
                    width=15).grid(row=0, column=1, padx=5, pady=2)
 
-        ttk.Button(btn_frame, text="LIGHT ON", command=lambda: self.send_command("LIGHT_ON"),
+        ttk.Button(btn_frame, text="LIGHT ON", command=lambda: self.send_command(f"G{self.gimbal_id}:LIGHT_ON"),
                    width=15).grid(row=1, column=0, padx=5, pady=2)
-        ttk.Button(btn_frame, text="LIGHT OFF", command=lambda: self.send_command("LIGHT_OFF"),
+        ttk.Button(btn_frame, text="LIGHT OFF", command=lambda: self.send_command(f"G{self.gimbal_id}:LIGHT_OFF"),
                    width=15).grid(row=1, column=1, padx=5, pady=2)
 
-        ttk.Button(btn_frame, text="ALL ON", command=lambda: self.send_command("ALL_ON"),
+        ttk.Button(btn_frame, text="ALL ON", command=lambda: self.send_command(f"G{self.gimbal_id}:ALL_ON"),
                    width=15).grid(row=2, column=0, padx=5, pady=2)
-        ttk.Button(btn_frame, text="ALL OFF", command=lambda: self.send_command("ALL_OFF"),
+        ttk.Button(btn_frame, text="ALL OFF", command=lambda: self.send_command(f"G{self.gimbal_id}:ALL_OFF"),
                    width=15).grid(row=2, column=1, padx=5, pady=2)
 
-        ttk.Button(btn_frame, text="RESET", command=lambda: self.send_command("RESET"),
+        ttk.Button(btn_frame, text="RESET", command=lambda: self.send_command(f"G{self.gimbal_id}:RESET"),
                    width=15).grid(row=3, column=0, padx=5, pady=2)
-        ttk.Button(btn_frame, text="STATUS", command=lambda: self.send_command("STATUS"),
+        ttk.Button(btn_frame, text="STATUS", command=lambda: self.send_command(f"G{self.gimbal_id}:STATUS"),
                    width=15).grid(row=3, column=1, padx=5, pady=2)
 
     # Slider event handlers
@@ -282,36 +285,56 @@ class GimbalUnit:
 
     def set_bpm(self):
         bpm = self.bpm_var.get()
-        self.send_command(f"BPM:{bpm:.1f}")
+        self.send_command(f"G{self.gimbal_id}:BPM:{bpm:.1f}")
 
     def set_amplitude(self):
         amp = self.amp_var.get()
         period = 60000.0 / self.bpm_var.get()
-        self.send_command(f"SWING1:{amp:.1f},{period:.0f},0")
+        self.send_command(f"G{self.gimbal_id}:SWING1:{amp:.1f},{period:.0f},0")
 
     def set_swing_width(self):
         width = self.swing_width_var.get()
         period = 60000.0 / self.bpm_var.get()
-        self.send_command(f"SWING2:{width:.1f},{period:.0f},0")
+        self.send_command(f"G{self.gimbal_id}:SWING2:{width:.1f},{period:.0f},0")
+
+    def on_pin_change(self):
+        # Debounce pin changes
+        if self.pin_change_pending:
+            try:
+                self.servo1_scale.after_cancel(self.pin_change_pending)
+            except:
+                pass
+        self.pin_change_pending = self.servo1_scale.after(500, self.set_servo_pins)
+
+    def on_light_pin_change(self):
+        # Debounce light pin changes
+        if self.light_pin_change_pending:
+            try:
+                self.servo1_scale.after_cancel(self.light_pin_change_pending)
+            except:
+                pass
+        self.light_pin_change_pending = self.servo1_scale.after(500, self.set_light_pin)
 
     def set_light_pin(self):
         pin = self.light_pin_var.get()
-        self.send_command(f"LIGHT_PIN:{pin}")
+        if pin.isdigit():
+            self.send_command(f"G{self.gimbal_id}:LIGHT_PIN:{pin}")
 
     def set_servo_pins(self):
         pin1 = self.servo1_pin_var.get()
         pin2 = self.servo2_pin_var.get()
-        self.send_command(f"SERVO_PINS:{pin1},{pin2}")
+        if pin1.isdigit() and pin2.isdigit():
+            self.send_command(f"G{self.gimbal_id}:SERVO_PINS:{pin1},{pin2}")
 
     def on_servo1_move(self, val):
         pos = int(float(val))
         self.servo1_pos_label.config(text=str(pos))
-        self.send_command(f"MOVE1:{pos}")
+        self.send_command(f"G{self.gimbal_id}:MOVE1:{pos}")
 
     def on_servo2_move(self, val):
         pos = int(float(val))
         self.servo2_pos_label.config(text=str(pos))
-        self.send_command(f"MOVE2:{pos}")
+        self.send_command(f"G{self.gimbal_id}:MOVE2:{pos}")
 
     def set_servo1_center(self):
         pos = self.servo1_pos_var.get()
@@ -346,21 +369,21 @@ class GimbalUnit:
     def apply_centers(self):
         c1 = self.center1_var.get()
         c2 = self.center2_var.get()
-        self.send_command(f"CENTER:{c1},{c2}")
+        self.send_command(f"G{self.gimbal_id}:CENTER:{c1},{c2}")
 
     def apply_limits(self):
         min1 = self.min1_var.get()
         max1 = self.max1_var.get()
         min2 = self.min2_var.get()
         max2 = self.max2_var.get()
-        self.send_command(f"LIMITS:{min1},{max1},{min2},{max2}")
+        self.send_command(f"G{self.gimbal_id}:LIMITS:{min1},{max1},{min2},{max2}")
         self.log(f"[{self.name}] Applied limits: S1={min1}-{max1}, S2={min2}-{max2}")
 
     def set_lfo(self):
         freq = self.lfo_freq_var.get()
         depth = self.lfo_depth_var.get()
         brightness = self.brightness_var.get()
-        self.send_command(f"LIGHT_LFO:{freq:.2f},{depth:.2f},{brightness}")
+        self.send_command(f"G{self.gimbal_id}:LIGHT_LFO:{freq:.2f},{depth:.2f},{brightness}")
 
     def get_config(self):
         """Return current configuration for saving"""
@@ -592,22 +615,28 @@ class GimbalControllerGUI:
             self.log(f"Send error: {e}")
 
     def start_all(self):
-        self.send_command("START")
+        self.send_command("G1:START")
+        self.send_command("G2:START")
 
     def stop_all(self):
-        self.send_command("STOP")
+        self.send_command("G1:STOP")
+        self.send_command("G2:STOP")
 
     def lights_on_all(self):
-        self.send_command("LIGHT_ON")
+        self.send_command("G1:LIGHT_ON")
+        self.send_command("G2:LIGHT_ON")
 
     def lights_off_all(self):
-        self.send_command("LIGHT_OFF")
+        self.send_command("G1:LIGHT_OFF")
+        self.send_command("G2:LIGHT_OFF")
 
     def all_on(self):
-        self.send_command("ALL_ON")
+        self.send_command("G1:ALL_ON")
+        self.send_command("G2:ALL_ON")
 
     def all_off(self):
-        self.send_command("ALL_OFF")
+        self.send_command("G1:ALL_OFF")
+        self.send_command("G2:ALL_OFF")
 
     def log(self, message):
         self.log_text.config(state="normal")
